@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ダークモードの強調色 (アイコンの矢印と同じ青) -->
+    <color name="accent">#60A5FA</color>
+    <color name="warning">#F59E0B</color>
+</resources>
