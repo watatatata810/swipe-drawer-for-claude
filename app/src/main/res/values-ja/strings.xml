@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="service_description">Claude アプリの会話エリアで右にスワイプすると、サイドバーを開きます。Claude が画面に出ている間だけタッチ探索モードでスワイプを見分け、メニューボタンを代わりに押します。他のアプリには影響しません。このアプリはインターネット権限を持たず、データの収集・送信は一切しません。</string>
+
+    <!-- 状態 -->
+    <string name="status_enabled_title">✔ 有効</string>
+    <string name="status_enabled_body">Claude の会話エリアで右にスワイプすると、サイドバーが開きます。</string>
+    <string name="status_disabled_title">まだ有効になっていません</string>
+    <string name="setup_steps">「ユーザー補助」→「インストール済みアプリ」→「%1$s」をオンにしてください。\n\nスイッチが押せない (「制限付き設定」) 場合は、先にこのアプリの「アプリ情報」右上の ⋮ から「制限付き設定を許可」を選んでください。</string>
+    <string name="open_accessibility">ユーザー補助の設定を開く</string>
+
+    <!-- 判定範囲 -->
+    <string name="zone_heading">判定範囲</string>
+    <string name="show_zone">判定範囲を Claude の画面に表示する</string>
+    <string name="zone_value_default">%1$s (既定)</string>
+    <string name="reset_defaults">既定値に戻す</string>
+    <string name="zone_tip">変更はすぐに反映されます。画面分割で Claude と並べると、枠の変化を見ながら調整できます。</string>
+    <string name="zone_width">幅</string>
+    <string name="zone_width_help">画面の左端からここまでをスワイプの受付範囲にします。右側は常に Claude がそのまま受け取ります。</string>
+    <string name="zone_edge">左端から除外</string>
+    <string name="zone_edge_help">One Hand Operation+ など、画面端のジェスチャーと重ならないように空ける幅です。</string>
+    <string name="zone_top">上の余白</string>
+    <string name="zone_top_help">メニューボタンの下端からの距離です。</string>
+    <string name="zone_bottom">下の余白</string>
+    <string name="zone_bottom_help">入力欄の上端からの距離です。</string>
+
+    <!-- その他 -->
+    <string name="language_heading">言語</string>
+    <string name="language_system">端末の設定に合わせる</string>
+    <string name="about_heading">このアプリについて</string>
+    <string name="support_row">☕ 開発を応援する</string>
+
+    <!-- このアプリについて -->
+    <string name="privacy_heading">プライバシー</string>
+    <string name="privacy_body">このアプリが Claude アプリの画面構造を読むのは、メニューボタンと入力欄の位置を知るためだけです。インターネット権限を持たないので、画面の内容が端末の外へ出ることはありません。</string>
+    <string name="info_heading">情報</string>
+    <string name="version_label">バージョン</string>
+    <string name="license_label">ライセンス</string>
+    <string name="source_label">ソースコード</string>
+    <string name="disclaimer">非公式アプリです。Anthropic とは無関係で、同社の承認も受けていません。「Claude」は Anthropic の商標です。</string>
+</resources>

@@ -1,0 +1,15 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+
+# リリース署名 (鍵とパスワードはリポジトリに入れない)
+keystore.properties
+*.jks
+*.keystore
+
+# 個人の作業環境
+.claude/
+.serena/
+.playwright-mcp/

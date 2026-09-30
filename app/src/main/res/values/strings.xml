@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Swipe Drawer for Claude</string>
+    <string name="service_label">Swipe Drawer for Claude</string>
+    <string name="service_description">Swipe right in the conversation area of the Claude app to open its sidebar. While Claude is on screen, this service uses touch exploration mode to watch for the swipe and presses the menu button for you. Other apps are not affected. This app has no internet permission and does not collect or send any data.</string>
+
+    <!-- 状態 -->
+    <string name="status_enabled_title">✔ Enabled</string>
+    <string name="status_enabled_body">Swipe right in Claude\'s conversation area to open the sidebar.</string>
+    <string name="status_disabled_title">Not enabled yet</string>
+    <string name="setup_steps">Turn it on in Accessibility → Installed apps → \"%1$s\".\n\nIf the switch is greyed out (\"Restricted setting\"), open this app\'s App info, tap ⋮ in the top right and choose \"Allow restricted settings\" first.</string>
+    <string name="open_accessibility">Open accessibility settings</string>
+
+    <!-- 判定範囲 -->
+    <string name="zone_heading">Swipe area</string>
+    <string name="show_zone">Show the swipe area on Claude\'s screen</string>
+    <string name="zone_value_default">%1$s (default)</string>
+    <string name="reset_defaults">Reset to defaults</string>
+    <string name="zone_tip">Changes apply immediately. Use split screen with Claude to watch the area while you adjust it.</string>
+    <string name="zone_width">Width</string>
+    <string name="zone_width_help">Swipes starting between the left edge and this point are handled. The rest of the screen always goes straight to Claude.</string>
+    <string name="zone_edge">Left edge gap</string>
+    <string name="zone_edge_help">Keeps a strip at the left edge free for edge gestures such as One Hand Operation+.</string>
+    <string name="zone_top">Top margin</string>
+    <string name="zone_top_help">Distance from the bottom of the menu button.</string>
+    <string name="zone_bottom">Bottom margin</string>
+    <string name="zone_bottom_help">Distance from the top of the message box.</string>
+
+    <!-- その他 -->
+    <string name="language_heading">Language</string>
+    <string name="language_system">Follow system</string>
+    <string name="about_heading">About this app</string>
+    <string name="support_row">☕ Support development</string>
+
+    <!-- このアプリについて -->
+    <string name="privacy_heading">Privacy</string>
+    <string name="privacy_body">This app reads the layout of the Claude app only to find the menu button and the message box. It has no internet permission, so nothing on your screen can leave your device.</string>
+    <string name="info_heading">Information</string>
+    <string name="version_label">Version</string>
+    <string name="license_label">License</string>
+    <string name="source_label">Source code</string>
+    <string name="disclaimer">Unofficial app. Not affiliated with or endorsed by Anthropic. \"Claude\" is a trademark of Anthropic.</string>
+</resources>
