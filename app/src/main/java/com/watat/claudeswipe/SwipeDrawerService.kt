@@ -33,11 +33,15 @@ import kotlin.math.hypot
  * zone の中のタッチは一旦預かり、右スワイプなら自分で処理、それ以外は requestDelegating() で
  * アプリへ返す。指を離すまで判定がつかなかったタップは dispatchGesture で作り直す。
  *
+ * 横スクロールする表・コードブロックの上では、まだ左へ戻せる間だけ右スワイプをアプリへ返す
+ * (左端まで戻っていればサイドバーを開く)。スクロール位置は押した時にノードへ問い合わせ直す。
+ *
  * キーボードはタッチ探索モードが有効だと読み上げ用の入力方式に切り替わり、普通のタップを
  * 受け付けなくなる。そのためキーボードが表示されている間はタッチ探索モードを切る。
  *
  * スレッド: ウィンドウ・判定範囲の管理はメインスレッド、タッチ判定は専用スレッド (touchHandler)。
- * 両者の受け渡しは不変な zone のスナップショットと controller の参照だけ。
+ * 両者の受け渡しは不変な zone のスナップショットと controller の参照、それに押した位置が
+ * 表・コードブロックの中かの問い合わせ (タッチ → メイン → タッチと post で往復する) だけ。
  */
 class SwipeDrawerService : AccessibilityService(),
     SharedPreferences.OnSharedPreferenceChangeListener {
@@ -71,7 +75,11 @@ class SwipeDrawerService : AccessibilityService(),
         private val PASSTHROUGH_RETRY_MS = longArrayOf(0L, 100L, 300L)
         /** メニューボタンを押したとみなす、ボタン周囲の余白 */
         private const val MENU_HIT_SLOP_DP = 16f
+        /** 画面の変化が止まってから全体を見直すまでの時間 (新しく現れた表を拾うため) */
+        private const val SETTLED_SCAN_MS = 300L
         private val FULL_UPDATE_TOKEN = Any()
+        private val SETTLED_SCAN_TOKEN = Any()
+        private const val HORIZONTAL_SCROLL_VIEW = "android.widget.HorizontalScrollView"
         private const val PREFETCH = AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_DEPTH_FIRST
 
         @Volatile
@@ -79,7 +87,14 @@ class SwipeDrawerService : AccessibilityService(),
             private set
     }
 
-    private enum class Phase { IDLE, UNDECIDED, CLAIMED, RELEASED }
+    /** WAITING: 右スワイプだが、押した位置が表・コードブロックの中かの答えを待っている */
+    private enum class Phase { IDLE, UNDECIDED, WAITING, CLAIMED, RELEASED }
+
+    /**
+     * 横スクロールする表 ([table] = true、セルを束ねる collectionInfo 付きのノード) か
+     * コードブロック (HorizontalScrollView そのもの)
+     */
+    private class Block(val node: AccessibilityNodeInfo, val table: Boolean)
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val touchThread = HandlerThread("ClaudeSwipe-touch").apply { start() }
@@ -112,7 +127,11 @@ class SwipeDrawerService : AccessibilityService(),
     private var scrimNode: AccessibilityNodeInfo? = null
     /** トップ画面にいる間だけ存在する「シークレットチャット」ボタン */
     private var topScreenNode: AccessibilityNodeInfo? = null
+    /** 画面にある表・コードブロック */
+    private var blocks = emptyList<Block>()
     private var lastFullScan = 0L
+    /** Claude の画面が最後に変化した時刻。これが lastFullScan より新しければ blocks は古いかもしれない */
+    private var lastContentChange = 0L
     /** 直前に有効だった範囲 (サイドバーを閉じた瞬間に先回りで戻すため) */
     private var lastGoodZone = Rect()
     /** 先回りで範囲を変えた後、答え合わせまで途中の更新で上書きしない期限 */
@@ -124,7 +143,14 @@ class SwipeDrawerService : AccessibilityService(),
     private var phase = Phase.IDLE
     private var downX = 0f
     private var downY = 0f
+    private var lastX = 0f
     private var opened = false
+    /** DOWN ごとに増やす。古いタッチへの答えを捨てるため */
+    private var touchSeq = 0
+    /** 押した位置が、まだ左へ戻せる表・コードブロックの中か。答えが出るまで null */
+    private var inScrolledBlock: Boolean? = null
+    /** 答えが出る前に指を離した右スワイプ。表の外と分かったらサイドバーを開く */
+    private var pendingOpen = false
     private var pendingTap: PointF? = null
     private var pendingTapTime = 0L
 
@@ -197,7 +223,11 @@ class SwipeDrawerService : AccessibilityService(),
                 requestZoneUpdate(full = true, delay = 0)
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                if (tracking && event.packageName == CLAUDE_PKG) requestZoneUpdate(full = false, delay = -1)
+                if (tracking && event.packageName == CLAUDE_PKG) {
+                    lastContentChange = SystemClock.uptimeMillis()
+                    requestZoneUpdate(full = false, delay = -1)
+                    scheduleSettledScan()
+                }
             }
         }
     }
@@ -232,6 +262,7 @@ class SwipeDrawerService : AccessibilityService(),
             forgetNodes()
             mainHandler.removeCallbacks(quickUpdater)
             mainHandler.removeCallbacksAndMessages(FULL_UPDATE_TOKEN)
+            mainHandler.removeCallbacksAndMessages(SETTLED_SCAN_TOKEN)
             quickUpdateScheduled = false
             setZone(Rect())
         }
@@ -282,6 +313,17 @@ class SwipeDrawerService : AccessibilityService(),
         quickUpdateScheduled = true
         val wait = (ZONE_UPDATE_THROTTLE_MS - (SystemClock.uptimeMillis() - lastZoneUpdate)).coerceAtLeast(0)
         mainHandler.postDelayed(quickUpdater, wait)
+    }
+
+    /**
+     * スクロールで新しく現れた表・コードブロックは quick では拾えない。画面の変化が止まった
+     * 時点で一度だけ全体を見直す (変化が続く間は FULL_RESCAN_MS ごとの見直しに任せる)。
+     * サイドバー開閉の答え合わせ (FULL_UPDATE_TOKEN) とは別に予約し、互いに取り消さない。
+     */
+    private fun scheduleSettledScan() {
+        mainHandler.removeCallbacksAndMessages(SETTLED_SCAN_TOKEN)
+        mainHandler.postAtTime({ updateZone(full = true) }, SETTLED_SCAN_TOKEN,
+            SystemClock.uptimeMillis() + SETTLED_SCAN_MS)
     }
 
     private fun updateZone(full: Boolean) {
@@ -336,6 +378,7 @@ class SwipeDrawerService : AccessibilityService(),
         forgetNodes()
         val root = claudeWindow()?.getRoot(PREFETCH) ?: return Rect()
         var menu: AccessibilityNodeInfo? = null
+        val found = mutableListOf<Block>()
         walk(root) { node ->
             val desc = node.contentDescription?.toString()
             if (desc != null) {
@@ -344,7 +387,15 @@ class SwipeDrawerService : AccessibilityService(),
                 if (desc in TOP_SCREEN_DESCS) topScreenNode = node
             }
             if (editNode == null && node.className == "android.widget.EditText") editNode = node
+            // 表はセルを束ねるノードに行×列の情報が付く (チャット一覧は N×1)。
+            // 表の HorizontalScrollView は下端の細いバー (子なし) で、表の下端が隠れると消えるので目印にしない
+            if ((node.collectionInfo?.columnCount ?: 0) >= 2) {
+                found += Block(node, table = true)
+            } else if (node.className == HORIZONTAL_SCROLL_VIEW && node.isScrollable && node.childCount > 0) {
+                found += Block(node, table = false)
+            }
         }
+        blocks = found
         menuNode = menu?.let { clickableAncestor(it) }
         scrimRect = scrimNode?.let { n -> Rect().also { n.getBoundsInScreen(it) } } ?: Rect()
         if (scrimNode != null) return Rect()
@@ -357,6 +408,58 @@ class SwipeDrawerService : AccessibilityService(),
         editNode = null
         scrimNode = null
         topScreenNode = null
+        blocks = emptyList()
+    }
+
+    /**
+     * 押した位置が、まだ左へ戻せる表・コードブロックの中か。縦スクロールで位置が、横スクロールで
+     * 戻せるかどうかが変わっても通知が来ないので、押した時にノードを問い合わせ直す。
+     */
+    private fun isInScrolledBlock(x: Int, y: Int): Boolean {
+        // スクロールで現れたばかりの表は、変化が止まった後の見直し (scheduleSettledScan) の前だと
+        // まだ知らない。前回の見直し以降に画面が変わっていたら、ここで全体を見直してから判定する
+        if (lastContentChange > lastFullScan) {
+            val start = SystemClock.uptimeMillis()
+            updateZone(full = true)
+            Log.i(TAG, "rescan on touch ${SystemClock.uptimeMillis() - start}ms")
+        }
+        val r = Rect()
+        val alive = blocks.filter { it.node.refresh() }
+        blocks = alive
+        val hit = alive.firstOrNull { it.node.getBoundsInScreen(r); r.contains(x, y) } ?: return false
+        val scrolled = if (hit.table) tableCanScrollLeft(hit.node) else canScrollLeft(hit.node)
+        Log.i(TAG, "touch on ${if (hit.table) "table" else "code"} scrolled=$scrolled")
+        return scrolled
+    }
+
+    private fun canScrollLeft(node: AccessibilityNodeInfo) =
+        AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT in node.actionList
+
+    /** [table] は refresh 済みであること */
+    private fun tableCanScrollLeft(table: AccessibilityNodeInfo): Boolean {
+        // 下端のスクロールバー (表の兄弟) が見えていれば、それが持つ操作で分かる
+        val parent = table.parent?.takeIf { it.refresh() }
+        if (parent != null) {
+            for (i in 0 until parent.childCount) {
+                val bar = parent.getChild(i) ?: continue
+                if (bar.className == HORIZONTAL_SCROLL_VIEW && bar.childCount == 0 && bar.refresh()) {
+                    return canScrollLeft(bar)
+                }
+            }
+        }
+        // バーが隠れている時は 1 列目のセルで判断する。左端では表の左端から余白をあけて並び、
+        // スクロールすると表の左端で切れるか、丸ごと見えなくなる
+        val tableRect = Rect().also { table.getBoundsInScreen(it) }
+        val cell = Rect()
+        var firstColumnSeen = false
+        for (i in 0 until table.childCount) {
+            val c = table.getChild(i)?.takeIf { it.refresh() } ?: continue
+            if (c.collectionItemInfo?.columnIndex != 0) continue
+            firstColumnSeen = true
+            c.getBoundsInScreen(cell)
+            if (cell.left <= tableRect.left) return true
+        }
+        return !firstColumnSeen && table.childCount > 0
     }
 
     private fun zoneFrom(menu: AccessibilityNodeInfo, edit: AccessibilityNodeInfo?): Rect {
@@ -459,6 +562,7 @@ class SwipeDrawerService : AccessibilityService(),
                 downX = x
                 downY = y
                 opened = false
+                pendingOpen = false
                 phase = Phase.UNDECIDED
                 val tap = pendingTap
                 if (tap != null && SystemClock.uptimeMillis() - pendingTapTime < INJECTED_MATCH_WINDOW_MS &&
@@ -472,19 +576,26 @@ class SwipeDrawerService : AccessibilityService(),
                     delegate("outside-zone")
                     return
                 }
+                lastX = x
+                askInScrolledBlock(x.toInt(), y.toInt())
                 touchHandler.postDelayed(delegateOnTimeout, DELEGATE_TIMEOUT_MS)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (phase == Phase.UNDECIDED) delegate("multi-touch")
             }
             MotionEvent.ACTION_MOVE -> {
+                lastX = x
                 val dx = x - downX
                 val dy = y - downY
                 when (phase) {
                     Phase.UNDECIDED -> if (hypot(dx, dy) > touchSlop) {
                         if (dx > 0 && dx > abs(dy) * 1.5f) {
                             touchHandler.removeCallbacks(delegateOnTimeout)
-                            phase = Phase.CLAIMED
+                            when (inScrolledBlock) {
+                                true -> delegate("scrolled block")
+                                false -> phase = Phase.CLAIMED
+                                null -> phase = Phase.WAITING
+                            }
                         } else {
                             delegate("move dx=${dx.toInt()} dy=${dy.toInt()}")
                         }
@@ -503,12 +614,52 @@ class SwipeDrawerService : AccessibilityService(),
                 } else if (phase == Phase.CLAIMED && !opened && x - downX > openDistancePx) {
                     opened = true
                     openDrawer()
+                } else if (phase == Phase.WAITING && x - downX > openDistancePx) {
+                    // メインスレッドが画面全体の見直し中だと答えが遅れる。答えを待って開く
+                    pendingOpen = true
                 }
                 phase = Phase.IDLE
             }
             MotionEvent.ACTION_CANCEL -> {
                 touchHandler.removeCallbacks(delegateOnTimeout)
+                pendingOpen = false
                 phase = Phase.IDLE
+            }
+        }
+    }
+
+    /**
+     * 押した位置が、まだ左へ戻せる表・コードブロックの中かをメインスレッドに問い合わせる
+     * (ノードはメインスレッドが持っている)。答えは [onInScrolledBlock] に届く。
+     */
+    private fun askInScrolledBlock(x: Int, y: Int) {
+        val seq = ++touchSeq
+        inScrolledBlock = null
+        mainHandler.post {
+            val inside = isInScrolledBlock(x, y)
+            touchHandler.post { if (seq == touchSeq) onInScrolledBlock(inside) }
+        }
+    }
+
+    private fun onInScrolledBlock(inside: Boolean) {
+        inScrolledBlock = inside
+        if (pendingOpen) {
+            pendingOpen = false
+            if (!inside && !opened) {
+                opened = true
+                openDrawer()
+            }
+            return
+        }
+        when {
+            // 表・コードブロックのスクロールに使うタッチ。判定を待たずにすぐ返す
+            inside -> if (phase == Phase.UNDECIDED || phase == Phase.WAITING) delegate("scrolled block")
+            phase == Phase.WAITING -> {
+                phase = Phase.CLAIMED
+                if (!opened && lastX - downX > openDistancePx) {
+                    opened = true
+                    openDrawer()
+                }
             }
         }
     }

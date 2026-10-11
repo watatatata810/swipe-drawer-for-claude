@@ -12,6 +12,7 @@ It is an accessibility service. While Claude is on screen:
 
 - Touches inside the swipe area are held briefly. A right swipe presses Claude's menu button for you; anything else (scrolling, taps, long presses) is handed straight back to Claude.
 - Touches outside the swipe area go to Claude untouched.
+- On a table or code block that is scrolled sideways, a right swipe scrolls it back instead. Once it is back at its left edge, a right swipe opens the sidebar again.
 - When you switch to another app, the service stops watching touches.
 
 While the keyboard is open the service steps back (keyboards stop accepting normal taps otherwise). On Claude's home screen, where the keyboard opens automatically, a transparent catcher over the swipe area still lets you swipe.
@@ -35,6 +36,7 @@ Requires Android 13 or later. The app's own screen is available in English and J
 ## Limitations
 
 - It finds Claude's buttons by their accessibility labels. If a Claude update renames or moves them, the swipe stops working until this app is updated.
+- Tables and code blocks are recognised from the screen layout too. Right after you scroll the conversation, the layout is checked again when you touch the screen, so the sidebar may open a moment later than usual (up to about half a second).
 - Tested with Claude 1.260928.20 (English and Japanese UI) on a Galaxy S24 Ultra (Android 16). Other languages and devices are best effort — the button labels are only known for English and Japanese.
 - While the service is active, Android reports "touch exploration" as on to other apps, the same signal TalkBack uses. This only happens while Claude is on screen.
 
@@ -70,6 +72,7 @@ AGP 8.13 / Gradle 8.13 / Kotlin 2.2 / JDK 17+. For a signed release build, put `
 
 - 判定範囲の中のタッチを一瞬預かり、右スワイプならメニューボタンを代わりに押します。スクロール・タップ・長押しなどはそのまま Claude に返します。
 - 判定範囲の外のタッチは、そのまま Claude に届きます。
+- 横にスクロールした表やコードブロックの上では、右スワイプで表のほうが戻ります。左端まで戻っていれば、右スワイプでサイドバーが開きます。
 - 他のアプリに切り替えると、タッチの監視をやめます。
 
 キーボード表示中は動作を控えます (キーボードが普通のタップを受け付けなくなるため)。キーボードが自動で開く Claude のトップ画面では、判定範囲に透明な受け口を置いてスワイプを受けます。
@@ -93,6 +96,7 @@ Android 13 以上が必要です。アプリの画面は英語と日本語に対
 ### 制限事項
 
 - Claude のボタンをアクセシビリティ上の名前で探しています。Claude の更新でボタンの名前や配置が変わると、このアプリが更新されるまで動かなくなります。
+- 表やコードブロックも画面の構造から見つけています。会話をスクロールした直後は、画面に触れた時に構造を調べ直すため、サイドバーが開くまで少し (最大 0.5 秒ほど) 遅れることがあります。
 - 動作確認は Claude 1.260928.20 (英語 UI・日本語 UI)・Galaxy S24 Ultra (Android 16) です。ボタン名を把握しているのは英語と日本語だけで、他の言語・機種はベストエフォートです。
 - 動作中は、TalkBack と同じ「タッチ探索が有効」という合図が他のアプリにも伝わります。Claude が画面に出ている間だけです。
 
